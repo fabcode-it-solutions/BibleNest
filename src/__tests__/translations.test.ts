@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'vitest'
+import type { Translation } from '../api'
+import { groupTranslations, partitionLanguages } from '../translations'
+import { parseHash, hashFor } from '../route'
+
+const t = (id: string, language: string, languageEnglishName: string, name = id): Translation => ({
+  id,
+  name,
+  englishName: name,
+  shortName: id,
+  language,
+  languageEnglishName,
+  textDirection: 'ltr',
+  website: '',
+  licenseUrl: '',
+  numberOfBooks: 66,
+})
+
+const all = [
+  t('deu1', 'deu', 'German'),
+  t('BSB', 'eng', 'English', 'Berean Standard Bible'),
+  t('swe_fol', 'swe', 'Swedish', 'Svenska Folkbibeln'),
+  t('afr1', 'afr', 'Afrikaans'),
+]
+
+describe('groupTranslations', () => {
+  it('puts preferred languages first, then English and Swedish, then A–Z', () => {
+    expect(groupTranslations(all, ['de']).map((g) => g.language)).toEqual(['de', 'en', 'sv', 'af'])
+    expect(groupTranslations(all, ['sv']).map((g) => g.language)).toEqual(['sv', 'en', 'af', 'de'])
+  })
+
+  it('filters by name or language', () => {
+    expect(groupTranslations(all, [], 'folk').flatMap((g) => g.translations.map((x) => x.id))).toEqual(['swe_fol'])
+    expect(groupTranslations(all, [], 'german').map((g) => g.language)).toEqual(['de'])
+  })
+})
+
+describe('partitionLanguages', () => {
+  it('suggests preferred languages and the current one, keeping their order', () => {
+    const groups = groupTranslations(all, ['de'])
+    const { suggested, others } = partitionLanguages(groups, ['de'], 'af')
+    expect(suggested.map((g) => g.language)).toEqual(['de', 'en', 'sv', 'af'])
+    expect(others).toEqual([])
+    expect(partitionLanguages(groups, ['de']).others.map((g) => g.language)).toEqual(['af'])
+  })
+
+  it('puts both sources\' codes for a language in one group', () => {
+    const merged = [...all, { ...all[2], id: 'yv-1111', language: 'sv' }]
+    const swedish = groupTranslations(merged, []).find((g) => g.language === 'sv')
+    expect(swedish?.translations.map((t) => t.id).sort()).toEqual(['swe_fol', 'yv-1111'])
+    expect(swedish?.label).toBe('Swedish · svenska')
+  })
+})
+
+describe('route hash', () => {
+  it('round-trips a chapter reference', () => {
+    const ref = { translationId: 'eng_kjv', book: 'JHN', chapter: 3 }
+    expect(parseHash(hashFor(ref))).toEqual(ref)
+    expect(parseHash('#/nonsense')).toBeNull()
+  })
+})
